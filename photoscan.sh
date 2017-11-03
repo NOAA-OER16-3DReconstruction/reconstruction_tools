@@ -2,4 +2,4 @@
 
 PHOTOSCAN="/Applications/Photoscan/PhotoScanPro.app/Contents/MacOS/PhotoScanPro"
 
-${PHOTOSCAN} -r $@
+${PHOTOSCAN} -r scripts/photoscan.py $@
