@@ -49,7 +49,7 @@ parser.add_argument('--chunk', default='default')
 args = parser.parse_args()
 logging.basicConfig( level=args.log.upper() )
 
-photoscan_proj = os.path.join(args.project, os.path.basename(args.project) + ".psz")
+photoscan_proj = os.path.join(args.project, "project.psz")
 imagedir  = os.path.join(args.project, 'images' )
 
 images = glob.glob( os.path.join(imagedir, "*.png") )
