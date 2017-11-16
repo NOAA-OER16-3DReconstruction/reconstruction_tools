@@ -2,7 +2,7 @@
 require 'pathname'
 
 
-project_dir = Pathname.new "projects/EX1605L3_one/"
+project_dir = Pathname.new "."
 json_file = project_dir.join('image_set.json')
 
 task :extract do
@@ -20,7 +20,7 @@ task :photoscan do
 
   json_files = Dir.glob(project_dir.join('*.json'))
 
-  sh photoscan, '-r', 'scripts/photoscan.py',
+  sh photoscan, '-r', '../../scripts/photoscan.py',
       '--align',
       json_file.to_s
 end

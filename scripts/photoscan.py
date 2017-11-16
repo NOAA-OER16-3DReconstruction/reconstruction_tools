@@ -10,12 +10,61 @@ import re
 import argparse
 
 
+def find(f, seq):
+  """Return first item in sequence where f(item) == True."""
+  for item in seq:
+    if f(item):
+      return item
+
+def findChunk( doc, chunkName ):
+    return find(lambda chunk: chunk.label == chunkName, doc.chunks)
+
+def addToChunk( doc, chunkName, imagedir, doAlign ):
+
+    changed = False
+
+    print("Checking image directory %s" % imagedir )
+    images = glob.glob( os.path.join(imagedir, "*.png") )
+
+    print("Adding %d frames to chunk \"%s\" from %s" % (len(images), chunkName, imagedir) )
+
+    chunk = findChunk( doc, chunkName )
+
+    if not chunk:
+        chunk = doc.addChunk()
+        chunk.label = chunkName
+
+    for camera in chunk.cameras:
+        p = camera.photo.path
+
+        logging.info("Existing chunk has file %s", p)
+
+        idx = [os.path.basename(i) for i in images].index( os.path.basename(p) )
+        if idx:
+            del images[idx]
+        else:
+            logging.info("Image %s in project but not in image set, removing..." % p)
+            changed = True
+            chunk.remove(camera)
+
+    ## All elements remaining in images are _not_ in the chunk
+    if len(images) > 0:
+        logging.info("Adding %d images to chunk ", len(images))
+        changed = True
+        chunk.addPhotos(images)
+
+        if doAlign and changed:
+            chunk.matchPhotos(accuracy=PhotoScan.HighAccuracy)
+            chunk.alignCameras()
+
+
+
 parser = argparse.ArgumentParser(description='Image set to photoscan project')
 
 # parser.add_argument('photoscan', help='Photoscan project (will be created if it doesn\'t exist)', default=False)
 # parser.add_argument('set', help='Images set', default=False)
 
-parser.add_argument('project', help='Project directory')
+parser.add_argument('imageset', help='Imageset')
 
 # parser.add_argument('input', nargs='?',
 #                     help='Regions files to process',
@@ -30,53 +79,24 @@ parser.add_argument('--align', action='store_true', help='Do align all chunks')
 parser.add_argument('--log', metavar='level', default='INFO',
                     help='Logging level')
 
-parser.add_argument('--chunk', default='default')
+parser.add_argument('--default-chunk', default='default')
 
-# parser.add_argument('--input', nargs='?', default='images/', help='Working directory')
-#
-# parser.add_argument('--image-size', dest='imgsize', nargs='?', default='320x240')
 
-# parser.add_argument('--with-groundtruth', dest='groundtruth', action='store_true')
-#
-# parser.add_argument("--ground-truth", dest="groundtruthfile",
-#                     default="classification/ground_truth.json")
-#
-# parser.add_argument("--image-format", dest="imageext", default='jpg')
-#
-# parser.add_argument('--lazycache-url', dest='lazycache', default=os.environ.get("LAZYCACHE_URL", None),
-#                     help='URL to Lazycache repo server (only needed if classifying)')
+imagedir = 'images/'
+default_chunk_name = 'default'
 
 args = parser.parse_args()
 logging.basicConfig( level=args.log.upper() )
 
-photoscan_proj = os.path.join(args.project, "project.psz")
-imagedir  = os.path.join(args.project, 'images' )
+projectdir = os.path.dirname( args.imageset )
+photoscan_proj = os.path.join(projectdir, "project.psz")
 
-images = glob.glob( os.path.join(imagedir, "*.png") )
-logging.info("Checking %d images", len(images))
-image_basenames = [os.path.basename(i) for i in images]
-
-logging.info("Photoscan project is %s", photoscan_proj )
-# logging.info("Image set is %s", args.set)
-#
-# ## Read the image set file
-# imageSet = 0
-# with open(args.set) as f:
-#     imageSet = json.load(f)
-#
-# print(imageSet)
-# frames = imageSet['Frames']
-# image_pattern = imageSet['ImageName'] if 'ImageName' in imageSet else "image_%06d.png"
-# logging.info("Using image pattern \"%s\"", image_pattern)
-#
-# # set image directory
-# image_dir = args.imagedir if args.imagedir else os.path.dirname(args.set)
-# logging.info("Using image directory %s", image_dir)
+## Load imageSet
+f = open(args.imageset)
+imageset = json.load(f)
+f.close()
 
 
-logging.info("Photoscan %s activated", "is" if PhotoScan.app.activated else "is not")
-
-## And open project
 doc = PhotoScan.app.document
 if os.path.isfile(photoscan_proj):
     doc.open(photoscan_proj)
@@ -87,36 +107,50 @@ else:
 photoscan_images = []
 default_chunk = None
 
-for chunk in doc.chunks:
 
-    if chunk.label == args.chunk:
-        default_chunk = chunk
+if 'Frames' in imageset and len(imageset['Frames'])>0:
+    chunkdir = os.path.join(projectdir, imagedir)
+    addToChunk( doc, default_chunk_name, chunkdir, doAlign = args.align  )
 
-    for camera in chunk.cameras:
-        p = camera.photo.path
-
-        logging.info("Existing chunk has file %s", p)
-
-        if os.path.basename(p) not in image_basenames:
-            logging.info("Image %s in project but not in image set, removing...")
-            chunk.remove(camera)
-        else:
-            photoscan_images.append(os.path.basename(p))
-
-for i in images:
-    if os.path.basename(i) not in photoscan_images:
-        logging.info("Adding image %s to project in chunk %s", i, args.chunk)
-
-        if not default_chunk:
-            logging.info("Needed to create chunk %s", args.chunk)
-            default_chunk = doc.addChunk()
-            default_chunk.label = args.chunk
-
-        default_chunk.addPhotos([i])
+if 'Chunks' in imageset:
+    for name,chunk in imageset['Chunks'].items():
+        chunkdir = os.path.join(projectdir, name, imagedir)
+        changed = addToChunk( doc, name, chunkdir, doAlign = args.align )
 
 
-if args.align:
-    for chunk in doc.chunks:
-        chunk.alignCameras()
+
 
 doc.save(path=photoscan_proj)
+
+
+
+
+
+
+
+
+# imagedir  = os.path.join(args.project, 'images' )
+
+
+#
+# logging.info("Photoscan project is %s", photoscan_proj )
+# # logging.info("Image set is %s", args.set)
+# #
+# # ## Read the image set file
+# # imageSet = 0
+# # with open(args.set) as f:
+# #     imageSet = json.load(f)
+# #
+# # print(imageSet)
+# # frames = imageSet['Frames']
+# # image_pattern = imageSet['ImageName'] if 'ImageName' in imageSet else "image_%06d.png"
+# # logging.info("Using image pattern \"%s\"", image_pattern)
+# #
+# # # set image directory
+# # image_dir = args.imagedir if args.imagedir else os.path.dirname(args.set)
+# # logging.info("Using image directory %s", image_dir)
+#
+#
+# logging.info("Photoscan %s activated", "is" if PhotoScan.app.activated else "is not")
+#
+# ## And open project
